@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api.v1.endpoints import ocean_pages
+from app.api.v1.endpoints import ocean_pages, ocean_blocks
 
 # Create FastAPI application
 app = FastAPI(
@@ -34,6 +34,12 @@ app.include_router(
     ocean_pages.router,
     prefix=f"{settings.API_V1_STR}/ocean",
     tags=["pages"]
+)
+
+app.include_router(
+    ocean_blocks.router,
+    prefix=f"{settings.API_V1_STR}/ocean",
+    tags=["blocks"]
 )
 
 
