@@ -238,6 +238,62 @@ class OceanService:
 
             return result.get("result", {}).get("rows", [])
 
+    async def count_pages(
+        self,
+        org_id: str,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Count total pages for an organization with optional filtering.
+
+        Args:
+            org_id: Organization ID (multi-tenant isolation)
+            filters: Optional filters (same as get_pages)
+
+        Returns:
+            Total count of pages matching filters
+        """
+        # Build query filters (same logic as get_pages)
+        query_filters = {"organization_id": org_id}
+
+        if filters:
+            if "parent_page_id" in filters:
+                query_filters["parent_page_id"] = filters["parent_page_id"]
+            if "is_archived" in filters:
+                query_filters["is_archived"] = filters["is_archived"]
+            else:
+                query_filters["is_archived"] = False
+            if "is_favorite" in filters:
+                query_filters["is_favorite"] = filters["is_favorite"]
+
+        # Query with limit=0 to get just count (if supported)
+        # Otherwise, query all and count locally
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                headers=self.headers,
+                json={
+                    "operation": "query_rows",
+                    "params": {
+                        "project_id": self.project_id,
+                        "table_name": self.table_name,
+                        "filter": query_filters,
+                        "limit": 1000  # Get all for count (ZeroDB limit)
+                    }
+                },
+                timeout=30.0
+            )
+
+            if response.status_code != 200:
+                return 0
+
+            result = response.json()
+            if not result.get("success"):
+                return 0
+
+            rows = result.get("result", {}).get("rows", [])
+            return len(rows)
+
     async def update_page(
         self,
         page_id: str,
@@ -541,20 +597,33 @@ class OceanService:
         This method is optimized for creating 100+ blocks at once, such as when
         importing content or duplicating pages.
 
+        **BATCH SIZE LIMITS:**
+        - Recommended maximum: 100 blocks per batch
+        - Hard limit: 500 blocks per batch (API constraint)
+        - For larger imports, split into multiple batch calls
+
         Args:
             page_id: Page ID the blocks belong to
             org_id: Organization ID (multi-tenant isolation)
             user_id: User ID creating the blocks
             blocks_list: List of block data dictionaries (same format as create_block)
+                        Maximum 500 blocks per batch
 
         Returns:
             List of complete block documents with generated IDs and embeddings
 
         Raises:
-            ValueError: If required fields are missing
+            ValueError: If required fields are missing or batch size exceeds limit
         """
         if not blocks_list:
             return []
+
+        # Validate batch size
+        if len(blocks_list) > 500:
+            raise ValueError(
+                f"Batch size {len(blocks_list)} exceeds maximum limit of 500 blocks. "
+                "Split large imports into multiple batches."
+            )
 
         # Note: Skip page verification for batch operations to avoid timing issues
         # Page existence will be validated by foreign key constraints in database
@@ -775,6 +844,62 @@ class OceanService:
             rows.sort(key=lambda x: x.get("position", 0))
 
             return rows
+
+    async def count_blocks_by_page(
+        self,
+        page_id: str,
+        org_id: str,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Count total blocks for a page with optional filtering.
+
+        Args:
+            page_id: Page ID to count blocks for
+            org_id: Organization ID (multi-tenant isolation)
+            filters: Optional filters (same as get_blocks_by_page)
+
+        Returns:
+            Total count of blocks matching filters
+        """
+        # Build query filters (same logic as get_blocks_by_page)
+        query_filters = {
+            "page_id": page_id,
+            "organization_id": org_id
+        }
+
+        if filters:
+            if "block_type" in filters:
+                query_filters["block_type"] = filters["block_type"]
+            if "parent_block_id" in filters:
+                query_filters["parent_block_id"] = filters["parent_block_id"]
+
+        # Query all blocks to count (ZeroDB limit: 1000)
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                headers=self.headers,
+                json={
+                    "operation": "query_rows",
+                    "params": {
+                        "project_id": self.project_id,
+                        "table_name": self.blocks_table_name,
+                        "filter": query_filters,
+                        "limit": 1000  # Get all for count
+                    }
+                },
+                timeout=30.0
+            )
+
+            if response.status_code != 200:
+                return 0
+
+            result = response.json()
+            if not result.get("success"):
+                return 0
+
+            rows = result.get("result", {}).get("rows", [])
+            return len(rows)
 
     async def update_block(
         self,

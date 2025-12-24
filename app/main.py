@@ -11,6 +11,11 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.api.v1.endpoints import ocean_pages, ocean_blocks, ocean_links, ocean_tags, ocean_search
+from app.middleware import QueryTimingMiddleware
+from app.logging_config import setup_logging
+
+# Setup logging
+setup_logging(debug=settings.DEBUG)
 
 # Create FastAPI application
 app = FastAPI(
@@ -18,6 +23,13 @@ app = FastAPI(
     description="Ocean - Notion-like workspace built on ZeroDB serverless infrastructure",
     version="0.1.0",
     debug=settings.DEBUG,
+)
+
+# Configure middleware
+# Add timing middleware first (executes last, wraps everything)
+app.add_middleware(
+    QueryTimingMiddleware,
+    slow_query_threshold_ms=100.0  # Log queries slower than 100ms
 )
 
 # Configure CORS

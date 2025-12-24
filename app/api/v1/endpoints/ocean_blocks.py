@@ -266,7 +266,7 @@ async def list_blocks(
         if parent_block_id is not None:
             filters["parent_block_id"] = parent_block_id
 
-        # Get blocks
+        # Get blocks and total count
         blocks = await service.get_blocks_by_page(
             page_id=page_id,
             org_id=current_user["organization_id"],
@@ -274,12 +274,19 @@ async def list_blocks(
             pagination={"limit": limit, "offset": offset}
         )
 
+        # Get total count (same filters, no pagination)
+        total = await service.count_blocks_by_page(
+            page_id=page_id,
+            org_id=current_user["organization_id"],
+            filters=filters if filters else None
+        )
+
         # Convert to response models
         block_responses = [BlockResponse(**block) for block in blocks]
 
         return BlockListResponse(
             blocks=block_responses,
-            total=len(block_responses),  # TODO: Add count query to service
+            total=total,
             limit=limit,
             offset=offset
         )

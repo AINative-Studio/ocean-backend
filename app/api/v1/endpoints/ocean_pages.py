@@ -126,11 +126,17 @@ async def list_pages(
         if is_favorite is not None:
             filters["is_favorite"] = is_favorite
 
-        # Get pages
+        # Get pages and total count
         pages = await service.get_pages(
             org_id=current_user["organization_id"],
             filters=filters if filters else None,
             pagination={"limit": limit, "offset": offset}
+        )
+
+        # Get total count (same filters, no pagination)
+        total = await service.count_pages(
+            org_id=current_user["organization_id"],
+            filters=filters if filters else None
         )
 
         # Convert to response models
@@ -138,7 +144,7 @@ async def list_pages(
 
         return PageListResponse(
             pages=page_responses,
-            total=len(page_responses),  # TODO: Add count query to service
+            total=total,
             limit=limit,
             offset=offset
         )
