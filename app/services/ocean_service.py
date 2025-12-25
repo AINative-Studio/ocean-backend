@@ -904,16 +904,12 @@ class OceanService:
         # Query all blocks to count (ZeroDB limit: 1000)
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": query_filters,
-                        "limit": 1000  # Get all for count
-                    }
+                    "filter": query_filters,
+                    "limit": 1000,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -922,11 +918,8 @@ class OceanService:
                 return 0
 
             result = response.json()
-            if not result.get("success"):
-                return 0
-
-            rows = result.get("result", {}).get("rows", [])
-            return len(rows)
+            rows_data = result.get("data", [])
+            return len(rows_data)
 
     async def update_block(
         self,
@@ -1006,22 +999,38 @@ class OceanService:
                 # Non-critical: continue without embedding update
                 print(f"WARNING: Failed to regenerate embedding for block {block_id}: {e}")
 
-        # Update in ZeroDB
+        # Update in ZeroDB (two-step process)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "update": update_payload
-                    }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
+                },
+                timeout=30.0
+            )
+
+            if query_response.status_code != 200:
+                return None
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Update by row_id
+            response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": update_payload
                 },
                 timeout=30.0
             )
@@ -1029,8 +1038,9 @@ class OceanService:
             if response.status_code != 200:
                 return None
 
-        # Return updated block
-        return await self.get_block(block_id, org_id)
+            # Return updated row_data
+            result = response.json()
+            return result.get("row_data")
 
     async def delete_block(
         self,
@@ -1060,26 +1070,40 @@ class OceanService:
                 # Non-critical: continue with block deletion
                 print(f"WARNING: Failed to delete embedding for block {block_id}: {e}")
 
-        # Delete block from ZeroDB
+        # Delete block from ZeroDB (two-step process)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "delete_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        }
-                    }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
 
-            return response.status_code == 200
+            if query_response.status_code != 200:
+                return False
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return False
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Delete by row_id
+            response = await client.delete(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{row_id}",
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            return response.status_code == 204  # Changed from 200 to 204
 
     async def move_block(
         self,
@@ -1138,48 +1162,76 @@ class OceanService:
                         "new_position": pos + 1
                     })
 
-        # Update affected blocks
-        for update in updates_needed:
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"{self.api_url}/v1/public/zerodb/mcp/execute",
+        # Update affected blocks (two-step for each)
+        async with httpx.AsyncClient() as client:
+            for update in updates_needed:
+                # Query to get row_id
+                query_response = await client.post(
+                    f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                     headers=self.headers,
                     json={
-                        "operation": "update_rows",
-                        "params": {
-                            "project_id": self.project_id,
-                            "table_name": self.blocks_table_name,
-                            "filter": {
-                                "block_id": update["block_id"],
-                                "organization_id": org_id
-                            },
-                            "update": {
-                                "position": update["new_position"],
-                                "updated_at": datetime.utcnow().isoformat()
-                            }
-                        }
+                        "filter": {
+                            "block_id": update["block_id"],
+                            "organization_id": org_id
+                        },
+                        "limit": 1
                     },
                     timeout=30.0
                 )
 
-        # Update the moved block
+                if query_response.status_code == 200:
+                    query_result = query_response.json()
+                    rows = query_result.get("data", [])
+                    if rows:
+                        row_id = rows[0]["row_id"]
+
+                        # Update by row_id
+                        await client.patch(
+                            f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{row_id}",
+                            headers=self.headers,
+                            json={
+                                "row_data": {
+                                    "position": update["new_position"],
+                                    "updated_at": datetime.utcnow().isoformat()
+                                }
+                            },
+                            timeout=30.0
+                        )
+
+        # Update the moved block (two-step process)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "position": new_position,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
+                },
+                timeout=30.0
+            )
+
+            if query_response.status_code != 200:
+                return None
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Update by row_id
+            response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": {
+                        "position": new_position,
+                        "updated_at": datetime.utcnow().isoformat()
                     }
                 },
                 timeout=30.0
@@ -1188,8 +1240,9 @@ class OceanService:
             if response.status_code != 200:
                 return None
 
-        # Return updated block
-        return await self.get_block(block_id, org_id)
+            # Return updated row_data
+            result = response.json()
+            return result.get("row_data")
 
     async def convert_block_type(
         self,
@@ -1270,22 +1323,38 @@ class OceanService:
                 # Non-critical: continue without embedding update
                 print(f"WARNING: Failed to regenerate embedding during conversion: {e}")
 
-        # Update in ZeroDB
+        # Update in ZeroDB (two-step process)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "update": update_payload
-                    }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
+                },
+                timeout=30.0
+            )
+
+            if query_response.status_code != 200:
+                return None
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Update by row_id
+            response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": update_payload
                 },
                 timeout=30.0
             )
@@ -1293,8 +1362,9 @@ class OceanService:
             if response.status_code != 200:
                 return None
 
-        # Return updated block
-        return await self.get_block(block_id, org_id)
+            # Return updated row_data
+            result = response.json()
+            return result.get("row_data")
 
     # ========================================================================
     # LINK MANAGEMENT OPERATIONS (Issue #10)
