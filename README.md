@@ -188,21 +188,73 @@ Ocean follows AINative core coding standards. See [.claude/CLAUDE.md](.claude/CL
 
 ## 🧪 Testing
 
+![Coverage Badge](./coverage.svg)
+
+### Quick Start
+
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run all unit tests (fast, no infrastructure needed)
+pytest tests/test_schemas.py tests/test_config.py tests/test_middleware.py tests/test_ocean_service_unit.py -v
 
-# Run with coverage
-pytest tests/ --cov=app --cov-report=term-missing
+# Run with coverage report
+pytest tests/ --cov=app --cov-report=html --cov-report=term-missing
 
-# Run specific test file
+# View HTML coverage report
+open htmlcov/index.html
+```
+
+### Test Suite Overview
+
+**Unit Tests**: 35 passing
+- ✅ `test_schemas.py` - 19 tests (100% schema coverage)
+- ✅ `test_ocean_service_unit.py` - 9 tests (validation logic)
+- ✅ `test_config.py` - 5 tests (100% config coverage)
+- ✅ `test_middleware.py` - 2 tests (middleware init)
+
+**Integration Tests**: 7 passing, 61 blocked
+- 🟨 `test_ocean_pages.py` - 3/16 passing (ZeroDB persistence bug)
+- 🟨 `test_ocean_blocks.py` - 3/24 passing (depends on pages)
+- 🟨 `test_ocean_links.py` - 1/12 passing (depends on blocks)
+- ❌ `test_embeddings_api.py` - 0/16 passing (routes not implemented)
+
+### Coverage Report
+
+**Current Coverage**: 19% (290/1,514 statements)
+
+| Module | Coverage | Status |
+|--------|----------|--------|
+| schemas | 100% | ✅ Complete |
+| config | 100% | ✅ Complete |
+| middleware | 60% | 🟨 Partial |
+| ocean_service | 9% | ❌ Blocked by ZeroDB |
+| endpoints | 0% | ❌ Blocked by ZeroDB |
+
+**Coverage Details**: See [docs/COVERAGE_REPORT.md](docs/COVERAGE_REPORT.md)
+
+**Infrastructure Blockers**:
+- ZeroDB data persistence failure blocks 61 integration tests
+- Embeddings API routes missing (16 tests blocked)
+
+**Realistic Coverage Targets**:
+- Current (without infrastructure): 19-25%
+- With ZeroDB fixed: 75-80%
+- Maximum achievable: 85-90%
+
+### Running Specific Tests
+
+```bash
+# Schema validation tests (100% coverage)
+pytest tests/test_schemas.py -v
+
+# Service validation tests
+pytest tests/test_ocean_service_unit.py -v
+
+# Integration tests (requires ZeroDB fix)
 pytest tests/test_ocean_pages.py -v
 
 # Load testing (1000+ concurrent requests)
 locust -f tests/load_test.py
 ```
-
-**Coverage Target**: ≥80% for unit and integration tests
 
 ---
 
