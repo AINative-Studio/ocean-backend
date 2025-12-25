@@ -1,0 +1,1335 @@
+{
+  "info": {
+    "name": "Ocean Backend API",
+    "description": "Complete API collection for Ocean Backend - Block-based knowledge workspace\n\n**Features:**\n- 27 endpoints covering pages, blocks, links, tags, and search\n- Test assertions on all requests\n- Environment variables for easy configuration\n- Example requests with realistic data\n\n**Setup:**\n1. Import this collection\n2. Create environment with: base_url, api_key, org_id\n3. Run tests individually or as collection\n\n**Version:** 0.1.0\n**Documentation:** https://github.com/AINative-Studio/ocean-backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "ocean-backend"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has status healthy\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql(\"healthy\");",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes ZeroDB config\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.zerodb).to.be.an('object');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "API Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes API version\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.api_version).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pages",
+      "item": [
+        {
+          "name": "Create Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes page_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.page_id).to.exist;",
+                  "    pm.environment.set(\"page_id\", jsonData.page_id);",
+                  "});",
+                  "",
+                  "pm.test(\"Title matches request\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.title).to.exist;",
+                  "});",
+                  "",
+                  "pm.test(\"Organization ID matches\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.organization_id).to.eql(pm.environment.get(\"org_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Beta Test Workspace\",\n  \"icon\": \"🧪\",\n  \"cover_image\": null,\n  \"parent_page_id\": null,\n  \"metadata\": {\n    \"created_by\": \"beta_tester\",\n    \"test_run\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has pages array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.pages).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes pagination\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.total).to.exist;",
+                  "    pm.expect(jsonData.limit).to.exist;",
+                  "    pm.expect(jsonData.offset).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes page details\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.page_id).to.exist;",
+                  "    pm.expect(jsonData.title).to.exist;",
+                  "    pm.expect(jsonData.created_at).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{page_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{page_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Title updated successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.title).to.include(\"Updated\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Beta Test Workspace\",\n  \"icon\": \"✅\",\n  \"is_favorite\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{page_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{page_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Move Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Position updated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.position).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_parent_id\": null,\n  \"new_position\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{page_id}}/move",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{page_id}}", "move"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Page archived successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.is_archived).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{page_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{page_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Blocks",
+      "item": [
+        {
+          "name": "Create Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes block_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.block_id).to.exist;",
+                  "    pm.environment.set(\"block_id\", jsonData.block_id);",
+                  "});",
+                  "",
+                  "pm.test(\"Block type matches\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.block_type).to.exist;",
+                  "});",
+                  "",
+                  "pm.test(\"Embedding generated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.block_type === 'text' || jsonData.block_type === 'heading') {",
+                  "        pm.expect(jsonData.vector_768).to.be.an('array');",
+                  "        pm.expect(jsonData.vector_768.length).to.eql(768);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"page_id\": \"{{page_id}}\",\n  \"block_type\": \"text\",\n  \"content\": \"This is a beta test block with semantic search capabilities. We're testing vector embeddings and search quality.\",\n  \"position\": 0,\n  \"metadata\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Blocks Batch",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"All blocks created\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.blocks).to.be.an('array');",
+                  "    pm.expect(jsonData.blocks.length).to.be.greaterThan(0);",
+                  "    if (jsonData.blocks.length > 0) {",
+                  "        pm.environment.set(\"block_id_2\", jsonData.blocks[0].block_id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blocks\": [\n    {\n      \"page_id\": \"{{page_id}}\",\n      \"block_type\": \"heading\",\n      \"content\": \"Beta Testing Checklist\",\n      \"position\": 1,\n      \"metadata\": {\"level\": 2}\n    },\n    {\n      \"page_id\": \"{{page_id}}\",\n      \"block_type\": \"task\",\n      \"content\": \"Test page creation\",\n      \"position\": 2,\n      \"metadata\": {\"completed\": true}\n    },\n    {\n      \"page_id\": \"{{page_id}}\",\n      \"block_type\": \"task\",\n      \"content\": \"Test block operations\",\n      \"position\": 3,\n      \"metadata\": {\"completed\": false}\n    },\n    {\n      \"page_id\": \"{{page_id}}\",\n      \"block_type\": \"task\",\n      \"content\": \"Test semantic search\",\n      \"position\": 4,\n      \"metadata\": {\"completed\": false}\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "batch"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Block details returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.block_id).to.exist;",
+                  "    pm.expect(jsonData.content).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Blocks by Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Blocks array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.blocks).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Blocks ordered by position\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.blocks.length > 1) {",
+                  "        for (let i = 1; i < jsonData.blocks.length; i++) {",
+                  "            pm.expect(jsonData.blocks[i].position).to.be.at.least(jsonData.blocks[i-1].position);",
+                  "        }",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks?page_id={{page_id}}&limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks"],
+              "query": [
+                {
+                  "key": "page_id",
+                  "value": "{{page_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Content updated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.content).to.include(\"UPDATED\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"UPDATED: This block has been modified during beta testing.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Move Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Position updated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.position).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_position\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{block_id}}/move",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{block_id}}", "move"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Convert Block Type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Block type converted\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.block_type).to.eql(\"heading\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_block_type\": \"heading\",\n  \"metadata\": {\"level\": 2}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/convert",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "convert"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Block Embedding",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Embedding is 768 dimensions\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.vector_768) {",
+                  "        pm.expect(jsonData.vector_768).to.be.an('array');",
+                  "        pm.expect(jsonData.vector_768.length).to.eql(768);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/embedding",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "embedding"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Block deleted successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Links",
+      "item": [
+        {
+          "name": "Create Link (Page to Page)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Link created with ID\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.link_id).to.exist;",
+                  "    pm.environment.set(\"link_id\", jsonData.link_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_page_id\": \"{{page_id}}\",\n  \"target_page_id\": \"{{page_id}}\",\n  \"link_type\": \"reference\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "links"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Link (Block to Block)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Block link created\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.link_id).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_block_id\": \"{{block_id}}\",\n  \"target_block_id\": \"{{block_id_2}}\",\n  \"link_type\": \"related\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/links",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "links"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Page Backlinks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Backlinks array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.backlinks).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/pages/{{page_id}}/backlinks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "pages", "{{page_id}}", "backlinks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Block Backlinks",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Backlinks array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.backlinks).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/backlinks",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "backlinks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Link",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Link deleted successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/links/{{link_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "links", "{{link_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Tags",
+      "item": [
+        {
+          "name": "Create Tag",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag created with ID\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.tag_id).to.exist;",
+                  "    pm.environment.set(\"tag_id\", jsonData.tag_id);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag name matches\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.name).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"beta-testing\",\n  \"color\": \"#3B82F6\",\n  \"metadata\": {\"category\": \"testing\"}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/tags",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Tags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tags array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.tags).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/tags",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Tag",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag updated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.name).to.exist;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"beta-tested\",\n  \"color\": \"#10B981\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/tags/{{tag_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "tags", "{{tag_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Tag to Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag assigned successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tag_id\": \"{{tag_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/tags",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Block Tags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tags array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.tags).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/tags",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Tag from Block",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag removed successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/blocks/{{block_id}}/tags/{{tag_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "blocks", "{{block_id}}", "tags", "{{tag_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Tag",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Tag deleted successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/tags/{{tag_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "tags", "{{tag_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Semantic Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Results array returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.results).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Results include similarity scores\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.results.length > 0) {",
+                  "        pm.expect(jsonData.results[0].similarity).to.exist;",
+                  "        pm.expect(jsonData.results[0].similarity).to.be.at.least(0);",
+                  "        pm.expect(jsonData.results[0].similarity).to.be.at.most(1);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/search?q=beta testing&search_type=semantic&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "beta testing"
+                },
+                {
+                  "key": "search_type",
+                  "value": "semantic"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Hybrid Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Results returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.results).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/search?q=test&search_type=hybrid&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "test"
+                },
+                {
+                  "key": "search_type",
+                  "value": "hybrid"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Search with Filters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Filtered results returned\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.results).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/ocean/search?q=beta&block_types=text,heading&search_type=semantic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "ocean", "search"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "beta"
+                },
+                {
+                  "key": "block_types",
+                  "value": "text,heading"
+                },
+                {
+                  "key": "search_type",
+                  "value": "semantic"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "org_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "page_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "block_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "block_id_2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tag_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "link_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
