@@ -104,21 +104,20 @@ class OceanService:
         # Insert into ZeroDB using direct HTTP
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/rows",
                 headers=self.headers,
                 json={
-                    "operation": "insert_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "rows": [page_doc]
-                    }
+                    "row_data": page_doc
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if response.status_code != 201:
                 raise Exception(f"Failed to insert page: {response.status_code} - {response.text}")
+
+            # Extract row_id from response
+            result = response.json()
+            page_doc["row_id"] = result["row_id"]
 
         return page_doc
 
@@ -140,19 +139,15 @@ class OceanService:
         # Query by page_id and organization_id
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": {
-                            "page_id": page_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1
-                    }
+                    "filter": {
+                        "page_id": page_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -162,12 +157,12 @@ class OceanService:
                 return None
 
             result = response.json()
-            # MCP bridge returns: {"success": True, "result": {"rows": [...]}}
-            if not result.get("success"):
+            rows = result.get("data", [])
+            if not rows:
                 return None
 
-            rows = result.get("result", {}).get("rows", [])
-            return rows[0] if rows else None
+            # Extract row_data from first result
+            return rows[0].get("row_data")
 
     async def get_pages(
         self,
@@ -213,17 +208,12 @@ class OceanService:
         # Query pages
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": query_filters,
-                        "limit": limit,
-                        "offset": offset
-                    }
+                    "filter": query_filters,
+                    "limit": limit,
+                    "skip": offset
                 },
                 timeout=30.0
             )
@@ -232,11 +222,10 @@ class OceanService:
                 return []
 
             result = response.json()
-            # MCP bridge returns: {"success": True, "result": {"rows": [...]}}
-            if not result.get("success"):
-                return []
+            rows = result.get("data", [])
 
-            return result.get("result", {}).get("rows", [])
+            # Extract row_data from each row
+            return [row.get("row_data") for row in rows]
 
     async def count_pages(
         self,
@@ -270,16 +259,12 @@ class OceanService:
         # Otherwise, query all and count locally
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": query_filters,
-                        "limit": 1000  # Get all for count (ZeroDB limit)
-                    }
+                    "filter": query_filters,
+                    "limit": 1000,  # Get all for count (ZeroDB limit)
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -288,10 +273,7 @@ class OceanService:
                 return 0
 
             result = response.json()
-            if not result.get("success"):
-                return 0
-
-            rows = result.get("result", {}).get("rows", [])
+            rows = result.get("data", [])
             return len(rows)
 
     async def update_page(
@@ -332,31 +314,48 @@ class OceanService:
             if field in updates:
                 update_payload[field] = updates[field]
 
-        # Update in ZeroDB
+        # Update in ZeroDB - requires two-step process
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": {
-                            "page_id": page_id,
-                            "organization_id": org_id
-                        },
-                        "update": update_payload
-                    }
+                    "filter": {
+                        "page_id": page_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if query_response.status_code != 200:
                 return None
 
-        # Return updated page
-        return await self.get_page(page_id, org_id)
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Update by row_id
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": update_payload
+                },
+                timeout=30.0
+            )
+
+            if update_response.status_code != 200:
+                return None
+
+            # Response contains updated row with row_data
+            result = update_response.json()
+            return result.get("row_data")
 
     async def delete_page(
         self,
@@ -378,30 +377,46 @@ class OceanService:
         if not existing_page:
             return False
 
-        # Soft delete: set is_archived=True
+        # Soft delete: set is_archived=True using two-step process
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": {
-                            "page_id": page_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "is_archived": True,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
+                    "filter": {
+                        "page_id": page_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
+                },
+                timeout=30.0
+            )
+
+            if query_response.status_code != 200:
+                return False
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return False
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Update by row_id to archive
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": {
+                        "is_archived": True,
+                        "updated_at": datetime.utcnow().isoformat()
                     }
                 },
                 timeout=30.0
             )
 
-            return response.status_code == 200
+            return update_response.status_code == 200
 
     async def move_page(
         self,
@@ -438,35 +453,52 @@ class OceanService:
         # Calculate new position (append to end of new parent)
         new_position = await self._get_next_position(org_id, new_parent_id)
 
-        # Update page
+        # Update page using two-step process
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.table_name,
-                        "filter": {
-                            "page_id": page_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "parent_page_id": new_parent_id,
-                            "position": new_position,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
+                    "filter": {
+                        "page_id": page_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
+                },
+                timeout=30.0
+            )
+
+            if query_response.status_code != 200:
+                return None
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Update by row_id
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": {
+                        "parent_page_id": new_parent_id,
+                        "position": new_position,
+                        "updated_at": datetime.utcnow().isoformat()
                     }
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if update_response.status_code != 200:
                 return None
 
-        # Return updated page
-        return await self.get_page(page_id, org_id)
+            # Response contains updated row with row_data
+            result = update_response.json()
+            return result.get("row_data")
 
     # ========================================================================
     # BLOCK OPERATIONS (Issue #7)
@@ -1346,21 +1378,20 @@ class OceanService:
         # Insert into ocean_block_links table
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/rows",
                 headers=self.headers,
                 json={
-                    "operation": "insert_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "rows": [link_doc]
-                    }
+                    "row_data": link_doc
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if response.status_code != 201:
                 raise Exception(f"Failed to create link: {response.status_code} - {response.text}")
+
+            # Save row_id from response for future operations
+            result = response.json()
+            link_doc["row_id"] = result["row_id"]
 
         return link_doc
 
@@ -1384,26 +1415,41 @@ class OceanService:
         if not existing_link:
             return False
 
-        # Delete from ocean_block_links table
+        # Step 1: Query to get row_id
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "delete_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "filter": {
-                            "link_id": link_id,
-                            "organization_id": org_id
-                        }
-                    }
+                    "filter": {
+                        "link_id": link_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1,
+                    "skip": 0
                 },
                 timeout=30.0
             )
 
-            return response.status_code == 200
+            if query_response.status_code != 200:
+                return False
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return False
+
+            row_id = rows[0]["row_id"]
+
+        # Step 2: Delete by row_id
+        async with httpx.AsyncClient() as client:
+            delete_response = await client.delete(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/rows/{row_id}",
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            return delete_response.status_code == 204
 
     async def get_page_backlinks(
         self,
@@ -1428,19 +1474,15 @@ class OceanService:
         # Query links where target_page_id matches
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "filter": {
-                            "target_page_id": page_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1000  # Reasonable limit for backlinks
-                    }
+                    "filter": {
+                        "target_page_id": page_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1000,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -1449,10 +1491,8 @@ class OceanService:
                 return []
 
             result = response.json()
-            if not result.get("success"):
-                return []
-
-            links = result.get("result", {}).get("rows", [])
+            rows = result.get("data", [])
+            links = [row.get("row_data") for row in rows]
 
         # Enrich with source block information
         backlinks = []
@@ -1496,19 +1536,15 @@ class OceanService:
         # Query links where target_block_id matches
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "filter": {
-                            "target_block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1000  # Reasonable limit for backlinks
-                    }
+                    "filter": {
+                        "target_block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1000,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -1517,10 +1553,8 @@ class OceanService:
                 return []
 
             result = response.json()
-            if not result.get("success"):
-                return []
-
-            links = result.get("result", {}).get("rows", [])
+            rows = result.get("data", [])
+            links = [row.get("row_data") for row in rows]
 
         # Enrich with source block information
         backlinks = []
@@ -1877,16 +1911,12 @@ class OceanService:
         # Query tags
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "filter": query_filters,
-                        "limit": 1000  # Reasonable limit for tags
-                    }
+                    "filter": query_filters,
+                    "skip": 0,
+                    "limit": 1000  # Reasonable limit for tags
                 },
                 timeout=30.0
             )
@@ -1895,10 +1925,8 @@ class OceanService:
                 return []
 
             result = response.json()
-            if not result.get("success"):
-                return []
-
-            rows = result.get("result", {}).get("rows", [])
+            rows_data = result.get("data", [])
+            rows = [row.get("row_data") for row in rows_data]
 
             # Filter by min_usage if specified
             if filters and "min_usage" in filters:
@@ -1955,32 +1983,48 @@ class OceanService:
             if field in updates:
                 update_payload[field] = updates[field]
 
-        # Update in ZeroDB
+        # Update in ZeroDB (2-step: query then update)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "filter": {
-                            "tag_id": tag_id,
-                            "organization_id": org_id
-                        },
-                        "update": update_payload
-                    }
+                    "filter": {
+                        "tag_id": tag_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if query_response.status_code != 200:
                 return None
 
-        # Return updated tag
-        updated_tags = await self.get_tags(org_id)
-        return next((t for t in updated_tags if t.get("tag_id") == tag_id), None)
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return None
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Update by row_id
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/rows/{row_id}",
+                headers=self.headers,
+                json={
+                    "row_data": update_payload
+                },
+                timeout=30.0
+            )
+
+            if update_response.status_code != 200:
+                return None
+
+            # Return updated row_data
+            result = update_response.json()
+            return result.get("row_data")
 
     async def delete_tag(
         self,
@@ -2008,26 +2052,40 @@ class OceanService:
         # For simplicity, we'll handle this in the block service when it's implemented
         # For now, just delete the tag document
 
-        # Delete tag from ZeroDB
+        # Delete tag from ZeroDB (2-step: query then delete)
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Step 1: Query to get row_id
+            query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "delete_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "filter": {
-                            "tag_id": tag_id,
-                            "organization_id": org_id
-                        }
-                    }
+                    "filter": {
+                        "tag_id": tag_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
 
-            return response.status_code == 200
+            if query_response.status_code != 200:
+                return False
+
+            query_result = query_response.json()
+            rows = query_result.get("data", [])
+            if not rows:
+                return False
+
+            row_id = rows[0]["row_id"]
+
+            # Step 2: Delete by row_id
+            delete_response = await client.delete(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/rows/{row_id}",
+                headers=self.headers,
+                timeout=30.0
+            )
+
+            return delete_response.status_code == 204
 
     async def assign_tag_to_block(
         self,
@@ -2058,19 +2116,14 @@ class OceanService:
         # Get block to verify it exists and belongs to organization
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1
-                    }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
@@ -2079,14 +2132,12 @@ class OceanService:
                 raise ValueError(f"Block {block_id} not found or does not belong to organization")
 
             result = response.json()
-            if not result.get("success"):
+            rows = result.get("data", [])
+            if not rows:
                 raise ValueError(f"Block {block_id} not found")
 
-            blocks = result.get("result", {}).get("rows", [])
-            if not blocks:
-                raise ValueError(f"Block {block_id} not found")
-
-            block = blocks[0]
+            block = rows[0].get("row_data")
+            block_row_id = rows[0]["row_id"]
 
             # Get current tags from block properties
             properties = block.get("properties", {})
@@ -2101,22 +2152,13 @@ class OceanService:
             properties["tags"] = tags
 
             # Update block
-            update_response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{block_row_id}",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "properties": properties,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
+                    "row_data": {
+                        "properties": properties,
+                        "updated_at": datetime.utcnow().isoformat()
                     }
                 },
                 timeout=30.0
@@ -2125,27 +2167,36 @@ class OceanService:
             if update_response.status_code != 200:
                 return False
 
-            # Increment tag usage count
-            await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            # Increment tag usage count (query tag first to get row_id)
+            tag_query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "filter": {
-                            "tag_id": tag_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "usage_count": existing_tag.get("usage_count", 0) + 1,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
-                    }
+                    "filter": {
+                        "tag_id": tag_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
+
+            if tag_query_response.status_code == 200:
+                tag_result = tag_query_response.json()
+                tag_rows = tag_result.get("data", [])
+                if tag_rows:
+                    tag_row_id = tag_rows[0]["row_id"]
+                    await client.patch(
+                        f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/rows/{tag_row_id}",
+                        headers=self.headers,
+                        json={
+                            "row_data": {
+                                "usage_count": existing_tag.get("usage_count", 0) + 1,
+                                "updated_at": datetime.utcnow().isoformat()
+                            }
+                        },
+                        timeout=30.0
+                    )
 
             return True
 
@@ -2178,19 +2229,14 @@ class OceanService:
         # Get block to verify it exists and belongs to organization
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1
-                    }
+                    "filter": {
+                        "block_id": block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
@@ -2199,14 +2245,12 @@ class OceanService:
                 raise ValueError(f"Block {block_id} not found or does not belong to organization")
 
             result = response.json()
-            if not result.get("success"):
+            rows = result.get("data", [])
+            if not rows:
                 raise ValueError(f"Block {block_id} not found")
 
-            blocks = result.get("result", {}).get("rows", [])
-            if not blocks:
-                raise ValueError(f"Block {block_id} not found")
-
-            block = blocks[0]
+            block = rows[0].get("row_data")
+            block_row_id = rows[0]["row_id"]
 
             # Get current tags from block properties
             properties = block.get("properties", {})
@@ -2221,22 +2265,13 @@ class OceanService:
             properties["tags"] = tags
 
             # Update block
-            update_response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            update_response = await client.patch(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/rows/{block_row_id}",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": {
-                            "block_id": block_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "properties": properties,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
+                    "row_data": {
+                        "properties": properties,
+                        "updated_at": datetime.utcnow().isoformat()
                     }
                 },
                 timeout=30.0
@@ -2245,28 +2280,37 @@ class OceanService:
             if update_response.status_code != 200:
                 return False
 
-            # Decrement tag usage count
+            # Decrement tag usage count (query tag first to get row_id)
             new_usage_count = max(0, existing_tag.get("usage_count", 0) - 1)
-            await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+            tag_query_response = await client.post(
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "update_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "filter": {
-                            "tag_id": tag_id,
-                            "organization_id": org_id
-                        },
-                        "update": {
-                            "usage_count": new_usage_count,
-                            "updated_at": datetime.utcnow().isoformat()
-                        }
-                    }
+                    "filter": {
+                        "tag_id": tag_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1
                 },
                 timeout=30.0
             )
+
+            if tag_query_response.status_code == 200:
+                tag_result = tag_query_response.json()
+                tag_rows = tag_result.get("data", [])
+                if tag_rows:
+                    tag_row_id = tag_rows[0]["row_id"]
+                    await client.patch(
+                        f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/rows/{tag_row_id}",
+                        headers=self.headers,
+                        json={
+                            "row_data": {
+                                "usage_count": new_usage_count,
+                                "updated_at": datetime.utcnow().isoformat()
+                            }
+                        },
+                        timeout=30.0
+                    )
 
             return True
 
@@ -2366,19 +2410,15 @@ class OceanService:
         # Query all links from target_block
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "filter": {
-                            "source_block_id": target_block_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1000
-                    }
+                    "filter": {
+                        "source_block_id": target_block_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1000,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -2387,10 +2427,8 @@ class OceanService:
                 return False
 
             result = response.json()
-            if not result.get("success"):
-                return False
-
-            links = result.get("result", {}).get("rows", [])
+            rows = result.get("data", [])
+            links = [row.get("row_data") for row in rows]
 
         # Check if any link points back to source
         for link in links:
@@ -2472,19 +2510,15 @@ class OceanService:
         """
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.links_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.links_table_name,
-                        "filter": {
-                            "link_id": link_id,
-                            "organization_id": org_id
-                        },
-                        "limit": 1
-                    }
+                    "filter": {
+                        "link_id": link_id,
+                        "organization_id": org_id
+                    },
+                    "limit": 1,
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -2493,11 +2527,12 @@ class OceanService:
                 return None
 
             result = response.json()
-            if not result.get("success"):
+            rows = result.get("data", [])
+            if not rows:
                 return None
 
-            rows = result.get("result", {}).get("rows", [])
-            return rows[0] if rows else None
+            # Return row_data with row_id included
+            return rows[0].get("row_data")
 
     def _get_content_preview(
         self,
@@ -2667,16 +2702,12 @@ class OceanService:
         # Query all blocks for organization (or specific page)
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": query_filters,
-                        "limit": 1000  # Get all blocks, then filter in-memory
-                    }
+                    "filter": query_filters,
+                    "limit": 1000,  # Get all blocks, then filter in-memory
+                    "skip": 0
                 },
                 timeout=30.0
             )
@@ -2685,10 +2716,9 @@ class OceanService:
                 return []
 
             result = response.json()
-            if not result.get("success"):
-                return []
-
-            blocks = result.get("result", {}).get("rows", [])
+            rows = result.get("data", [])
+            # Extract row_data from each row
+            blocks = [row.get("row_data") for row in rows]
 
         # Filter by block types if specified
         if "block_types" in filters:
@@ -2845,12 +2875,12 @@ class OceanService:
         """
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/{self.project_id}/embeddings/search",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/vectors/search",
                 headers=self.headers,
                 json={
                     "query_vector": query_embedding,
                     "namespace": "ocean_blocks",
-                    "filter_metadata": metadata_filter,
+                    "metadata_filter": metadata_filter,
                     "threshold": threshold,
                     "limit": limit
                 },
