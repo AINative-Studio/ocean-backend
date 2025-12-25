@@ -59,6 +59,8 @@ Ocean Backend provides a complete REST API for managing pages, blocks, links, ta
 | [BACKEND_BACKLOG.md](BACKEND_BACKLOG.md) | Complete development backlog (22 issues, 39 story points) |
 | [ZERODB_IMPLEMENTATION_PLAN.md](ZERODB_IMPLEMENTATION_PLAN.md) | Detailed implementation guide with code examples |
 | [DAY1_CHECKLIST.md](DAY1_CHECKLIST.md) | Step-by-step setup guide for first day |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | **Comprehensive Railway deployment guide** |
+| [docs/RAILWAY_QUICK_START.md](docs/RAILWAY_QUICK_START.md) | **5-minute Railway deployment** |
 | [EMBEDDINGS_REVISION_SUMMARY.md](EMBEDDINGS_REVISION_SUMMARY.md) | Why we use ZeroDB Embeddings API |
 | [PRD.md](PRD.md) | Product requirements document |
 | [.claude/CLAUDE.md](.claude/CLAUDE.md) | Project memory and coding standards |
@@ -206,7 +208,16 @@ locust -f tests/load_test.py
 
 ## 🚢 Deployment
 
-### Railway
+### Quick Deploy to Railway
+
+**Option 1: Automated Setup (Recommended)**
+
+```bash
+# Run setup script - prompts for env vars and deploys
+./scripts/railway_setup.sh
+```
+
+**Option 2: Manual Setup**
 
 ```bash
 # Install Railway CLI
@@ -218,17 +229,40 @@ railway login
 # Link to project
 railway link
 
+# Set environment variables
+railway variables set ZERODB_API_URL=https://api.ainative.studio
+railway variables set ZERODB_PROJECT_ID=your_project_id
+railway variables set ZERODB_API_KEY=your_api_key
+railway variables set SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+
 # Deploy
 railway up
 ```
 
-### Environment Configuration
+### Verify Deployment
 
-Set these in Railway dashboard:
-- `ZERODB_API_URL`
-- `ZERODB_PROJECT_ID`
-- `ZERODB_API_KEY`
-- `OCEAN_EMBEDDINGS_MODEL`
+```bash
+# Set your staging URL
+export RAILWAY_STAGING_URL=https://your-app.up.railway.app
+
+# Run smoke tests
+./scripts/smoke_tests.sh
+```
+
+### Documentation
+
+- **Quick Start**: [docs/RAILWAY_QUICK_START.md](docs/RAILWAY_QUICK_START.md) - 5-minute deployment
+- **Full Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Comprehensive deployment guide
+- **CI/CD**: `.github/workflows/deploy.yml` - Automated deployment pipeline
+
+### CI/CD Pipeline
+
+Every push to `main` triggers:
+1. Linting and type checking
+2. Full test suite with coverage
+3. Deployment to Railway staging
+4. Health checks and smoke tests
+5. Automatic rollback on failure
 
 ---
 

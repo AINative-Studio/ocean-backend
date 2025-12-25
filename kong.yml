@@ -1,0 +1,997 @@
+_format_version: "3.0"
+_transform: true
+
+# Ocean Backend - Kong Gateway Configuration
+# Issue #18: Configure Kong API Gateway for rate limiting and routing
+#
+# This configuration sets up Kong as a reverse proxy for the Ocean backend API
+# with rate limiting, API key validation, and CORS support.
+
+services:
+  - name: ocean-backend
+    url: http://localhost:8000
+    protocol: http
+    host: localhost
+    port: 8000
+    path: /
+    retries: 5
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+
+    routes:
+      # ============================================================================
+      # Health & Info Endpoints (No Rate Limiting)
+      # ============================================================================
+
+      - name: ocean-health
+        paths:
+          - /health
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - PATCH
+                - OPTIONS
+              headers:
+                - Accept
+                - Authorization
+                - Content-Type
+              exposed_headers:
+                - X-RateLimit-Limit
+                - X-RateLimit-Remaining
+                - X-RateLimit-Reset
+              credentials: true
+              max_age: 3600
+
+      - name: ocean-root
+        paths:
+          - /
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+              credentials: true
+
+      - name: ocean-api-info
+        paths:
+          - /api/v1/info
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+              credentials: true
+
+      # ============================================================================
+      # Pages Endpoints - Write Operations (100 req/min)
+      # ============================================================================
+
+      - name: ocean-pages-create
+        paths:
+          - /api/v1/ocean/pages
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              headers:
+                - Accept
+                - Authorization
+                - Content-Type
+                - apikey
+              exposed_headers:
+                - X-RateLimit-Limit
+                - X-RateLimit-Remaining
+                - X-RateLimit-Reset
+              credentials: true
+              max_age: 3600
+
+      - name: ocean-pages-update
+        paths:
+          - ~/api/v1/ocean/pages/[0-9a-f\-]+$
+        methods:
+          - PUT
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - PUT
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-pages-delete
+        paths:
+          - ~/api/v1/ocean/pages/[0-9a-f\-]+$
+        methods:
+          - DELETE
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - DELETE
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-pages-move
+        paths:
+          - ~/api/v1/ocean/pages/[0-9a-f\-]+/move$
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Pages Endpoints - Read Operations (1000 req/min)
+      # ============================================================================
+
+      - name: ocean-pages-list
+        paths:
+          - /api/v1/ocean/pages
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-pages-get
+        paths:
+          - ~/api/v1/ocean/pages/[0-9a-f\-]+$
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Blocks Endpoints - Write Operations (100 req/min)
+      # ============================================================================
+
+      - name: ocean-blocks-create
+        paths:
+          - /api/v1/ocean/blocks
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-update
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+$
+        methods:
+          - PUT
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - PUT
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-delete
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+$
+        methods:
+          - DELETE
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - DELETE
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-move
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/move$
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-convert
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/convert$
+        methods:
+          - PUT
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - PUT
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Blocks Endpoints - Batch Operations (10 req/min)
+      # ============================================================================
+
+      - name: ocean-blocks-batch
+        paths:
+          - /api/v1/ocean/blocks/batch
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 10
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Blocks Endpoints - Read Operations (1000 req/min)
+      # ============================================================================
+
+      - name: ocean-blocks-list
+        paths:
+          - /api/v1/ocean/blocks
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-get
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+$
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-embedding
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/embedding$
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Links Endpoints - Write Operations (100 req/min)
+      # ============================================================================
+
+      - name: ocean-links-create
+        paths:
+          - /api/v1/ocean/links
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-links-delete
+        paths:
+          - ~/api/v1/ocean/links/[0-9a-f\-]+$
+        methods:
+          - DELETE
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - DELETE
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Links Endpoints - Read Operations (1000 req/min)
+      # ============================================================================
+
+      - name: ocean-pages-backlinks
+        paths:
+          - ~/api/v1/ocean/pages/[0-9a-f\-]+/backlinks$
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-backlinks
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/backlinks$
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Tags Endpoints - Write Operations (100 req/min)
+      # ============================================================================
+
+      - name: ocean-tags-create
+        paths:
+          - /api/v1/ocean/tags
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-tags-update
+        paths:
+          - ~/api/v1/ocean/tags/[0-9a-f\-]+$
+        methods:
+          - PUT
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - PUT
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-tags-delete
+        paths:
+          - ~/api/v1/ocean/tags/[0-9a-f\-]+$
+        methods:
+          - DELETE
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - DELETE
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-tags-assign
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/tags$
+        methods:
+          - POST
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+              credentials: true
+
+      - name: ocean-blocks-tags-remove
+        paths:
+          - ~/api/v1/ocean/blocks/[0-9a-f\-]+/tags/[0-9a-f\-]+$
+        methods:
+          - DELETE
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - DELETE
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Tags Endpoints - Read Operations (1000 req/min)
+      # ============================================================================
+
+      - name: ocean-tags-list
+        paths:
+          - /api/v1/ocean/tags
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 1000
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+      # ============================================================================
+      # Search Endpoints (50 req/min - Resource Intensive)
+      # ============================================================================
+
+      - name: ocean-search
+        paths:
+          - /api/v1/ocean/search
+        methods:
+          - GET
+        strip_path: false
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 50
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          - name: key-auth
+            config:
+              key_names:
+                - apikey
+              hide_credentials: false
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+              credentials: true
+
+# ============================================================================
+# API Key Consumers
+# ============================================================================
+# These consumers can be created via Kong Admin API after deployment
+
+consumers:
+  - username: ocean-test-user
+    custom_id: test-user-123
+    keyauth_credentials:
+      - key: test-api-key-123456789
+    tags:
+      - development
+      - testing
+
+  - username: ocean-prod-user
+    custom_id: prod-user-456
+    tags:
+      - production
+
+# ============================================================================
+# Global Plugins
+# ============================================================================
+
+plugins:
+  - name: request-transformer
+    config:
+      add:
+        headers:
+          - X-Kong-Proxy: "true"
+
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - X-Kong-Upstream: ocean-backend
+          - X-RateLimit-Limit: "$(ratelimit-limit)"
+          - X-RateLimit-Remaining: "$(ratelimit-remaining)"
+          - X-RateLimit-Reset: "$(ratelimit-reset)"
+
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
