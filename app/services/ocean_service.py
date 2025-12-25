@@ -848,17 +848,12 @@ class OceanService:
         # Query blocks
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.blocks_table_name}/query",
                 headers=self.headers,
                 json={
-                    "operation": "query_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.blocks_table_name,
-                        "filter": query_filters,
-                        "limit": limit,
-                        "offset": offset
-                    }
+                    "filter": query_filters,
+                    "limit": limit,
+                    "skip": offset
                 },
                 timeout=30.0
             )
@@ -867,15 +862,15 @@ class OceanService:
                 return []
 
             result = response.json()
-            if not result.get("success"):
-                return []
+            rows_data = result.get("data", [])
 
-            rows = result.get("result", {}).get("rows", [])
+            # Extract row_data from each row
+            blocks = [row.get("row_data") for row in rows_data]
 
             # Sort by position (ZeroDB doesn't support ORDER BY yet)
-            rows.sort(key=lambda x: x.get("position", 0))
+            blocks.sort(key=lambda x: x.get("position", 0))
 
-            return rows
+            return blocks
 
     async def count_blocks_by_page(
         self,
@@ -1862,21 +1857,20 @@ class OceanService:
         # Insert into ZeroDB
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.api_url}/v1/public/zerodb/mcp/execute",
+                f"{self.api_url}/v1/projects/{self.project_id}/database/tables/{self.tags_table_name}/rows",
                 headers=self.headers,
                 json={
-                    "operation": "insert_rows",
-                    "params": {
-                        "project_id": self.project_id,
-                        "table_name": self.tags_table_name,
-                        "rows": [tag_doc]
-                    }
+                    "row_data": tag_doc
                 },
                 timeout=30.0
             )
 
-            if response.status_code != 200:
+            if response.status_code != 201:
                 raise Exception(f"Failed to create tag: {response.status_code} - {response.text}")
+
+            # Extract row_id from response
+            result = response.json()
+            tag_doc["row_id"] = result["row_id"]
 
         return tag_doc
 
