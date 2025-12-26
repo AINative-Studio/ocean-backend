@@ -73,6 +73,28 @@ app.include_router(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Startup event - check configuration."""
+    import logging
+    logger = logging.getLogger("uvicorn")
+
+    logger.info("=" * 60)
+    logger.info("Ocean Backend Starting...")
+    logger.info("=" * 60)
+
+    if not settings.validate_zerodb_config():
+        logger.warning("⚠️  ZeroDB credentials NOT configured!")
+        logger.warning("⚠️  Set ZERODB_PROJECT_ID and ZERODB_API_KEY in Railway variables")
+        logger.warning("⚠️  Ocean API endpoints will not function until configured")
+    else:
+        logger.info(f"✓ ZeroDB configured: Project {settings.ZERODB_PROJECT_ID}")
+        logger.info(f"✓ ZeroDB API URL: {settings.ZERODB_API_URL}")
+
+    logger.info(f"✓ CORS Origins: {settings.BACKEND_CORS_ORIGINS}")
+    logger.info("=" * 60)
+
+
 @app.get("/")
 async def root():
     """Root endpoint - API information."""
@@ -89,14 +111,20 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    zerodb_configured = settings.validate_zerodb_config()
+
     return JSONResponse(
         status_code=200,
         content={
             "status": "healthy",
             "service": "ocean-backend",
             "version": "0.1.0",
+            "configuration": {
+                "zerodb_configured": zerodb_configured,
+                "warning": None if zerodb_configured else "ZeroDB credentials not configured. Set ZERODB_PROJECT_ID and ZERODB_API_KEY environment variables."
+            },
             "zerodb": {
-                "project_id": settings.ZERODB_PROJECT_ID,
+                "project_id": settings.ZERODB_PROJECT_ID or "NOT_CONFIGURED",
                 "api_url": settings.ZERODB_API_URL,
                 "embeddings_model": settings.OCEAN_EMBEDDINGS_MODEL
             }
