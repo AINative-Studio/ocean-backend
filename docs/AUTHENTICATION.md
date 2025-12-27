@@ -1,766 +1,366 @@
-# Ocean API Authentication Guide
+# Ocean Backend Authentication Design
 
-**Version:** 0.1.0
-**Last Updated:** 2025-12-24
+## Architecture Overview
+
+**Ocean backend uses AINative core authentication service** for user authentication and authorization.
+
+```
+┌─────────────┐      ┌──────────────────┐      ┌─────────────┐
+│   Client    │─────>│  AINative Core   │      │   Ocean     │
+│             │      │  Auth Service    │      │   Backend   │
+│             │<─────│  /v1/auth/login  │      │             │
+│             │      └──────────────────┘      │             │
+│             │              │                 │             │
+│             │              │ JWT Token       │             │
+│             │              v                 │             │
+│             │      ┌──────────────────────────────────────┐│
+│             │─────>│  Authorization: Bearer <token>       ││
+│             │      │  /api/v1/ocean/pages                 ││
+│             │<─────│  Returns: Ocean data                 ││
+│             │      └──────────────────────────────────────┘│
+└─────────────┘                                │             │
+                                               └─────────────┘
+```
 
 ---
 
-## Table of Contents
+## Current Implementation Status
 
-1. [Overview](#overview)
-2. [JWT Token Authentication](#jwt-token-authentication)
-3. [Multi-Tenant Security Model](#multi-tenant-security-model)
-4. [Authentication Flow](#authentication-flow)
-5. [Token Structure](#token-structure)
-6. [Making Authenticated Requests](#making-authenticated-requests)
-7. [Token Expiration and Refresh](#token-expiration-and-refresh)
-8. [Security Best Practices](#security-best-practices)
-9. [Troubleshooting](#troubleshooting)
+### ✅ AINative Core Auth (Production)
+- **API**: `https://api.ainative.studio/v1/auth/`
+- **Status**: Live and operational
+- **Endpoints**: login, register, refresh, me, verify-email, forgot-password, reset-password
 
----
+### ⚠️ Ocean Backend Auth (Mock - Needs Integration)
+- **File**: `/Users/aideveloper/ocean-backend/app/api/deps.py:14-44`
+- **Status**: Mock authentication (returns test user)
+- **TODO**: Integrate with AINative core auth service
 
-## Overview
-
-Ocean API uses **JWT (JSON Web Token) Bearer authentication** to secure all endpoints. The authentication system is designed to:
-
-- Verify user identity on every request
-- Enforce multi-tenant isolation at the organization level
-- Prevent cross-organization data access
-- Support token expiration and refresh mechanisms
-
-**Key Points:**
-
-- All endpoints (except `/health` and `/`) require authentication
-- JWT tokens are issued by the parent authentication service
-- Tokens must include `user_id`, `organization_id`, and expiration
-- No API keys - all auth is token-based
-
----
-
-## JWT Token Authentication
-
-### What is JWT?
-
-JSON Web Token (JWT) is an industry-standard method for securely transmitting information between parties as a JSON object. The token is:
-
-- **Self-contained**: Contains all user information needed for authorization
-- **Signed**: Cryptographically signed to prevent tampering
-- **Stateless**: Server doesn't need to store session data
-
-### JWT Structure
-
-A JWT token consists of three parts separated by dots (`.`):
-
+```python
+# Current (Mock):
+async def get_current_user(authorization: str = Header(None)):
+    """
+    For MVP: Returns test user for development.
+    TODO: Integrate with AINative core auth service for production.
+    """
+    return {
+        "user_id": "test-user-123",
+        "organization_id": "test-org-456",
+        "email": "test@example.com",
+        "role": "user"
+    }
 ```
-header.payload.signature
-```
-
-**Example Token:**
-
-```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidGVzdC11c2VyLTEyMyIsIm9yZ2FuaXphdGlvbl9pZCI6InRlc3Qtb3JnLTQ1NiIsImV4cCI6MTczNTEyMzQ1Nn0.signature_here
-```
-
-**Decoded Payload:**
-
-```json
-{
-  "user_id": "test-user-123",
-  "organization_id": "test-org-456",
-  "exp": 1735123456
-}
-```
-
-### Required Claims
-
-Every JWT token used with Ocean API **must** include:
-
-| Claim | Type | Description | Example |
-|-------|------|-------------|---------|
-| `user_id` | string | Unique user identifier | `"test-user-123"` |
-| `organization_id` | string | Organization identifier for multi-tenancy | `"test-org-456"` |
-| `exp` | integer | Expiration timestamp (Unix epoch) | `1735123456` |
-
-**Optional Claims:**
-
-- `iat` (issued at): Token creation timestamp
-- `iss` (issuer): Token issuer identifier
-- `sub` (subject): User subject (often same as user_id)
-
----
-
-## Multi-Tenant Security Model
-
-Ocean API implements **strict multi-tenant isolation** to ensure organizations can only access their own data.
-
-### How It Works
-
-1. **JWT Token Extraction**:
-   - Every request includes a JWT token in the Authorization header
-   - Ocean extracts `organization_id` from the token payload
-
-2. **Automatic Filtering**:
-   - All database queries are automatically filtered by `organization_id`
-   - Users can only read/write resources belonging to their organization
-
-3. **Cross-Organization Protection**:
-   - Attempting to access another organization's resources returns `404 Not Found`
-   - No error message reveals whether the resource exists in another organization
-
-### Example Isolation
-
-**Scenario:** User in Organization A tries to access a page from Organization B.
-
-```bash
-# User token: organization_id = "org-a"
-curl -X GET http://localhost:8000/api/v1/ocean/pages/page-from-org-b \
-  -H "Authorization: Bearer <ORG_A_TOKEN>"
-```
-
-**Response:** `404 Not Found`
-
-```json
-{
-  "detail": "Page page-from-org-b not found or does not belong to organization"
-}
-```
-
-**Security Note:** The error message doesn't reveal whether the page exists in another organization.
-
-### Database Schema
-
-All resources include an `organization_id` field:
-
-**Pages Table:**
-
-```json
-{
-  "page_id": "page_123",
-  "organization_id": "org-a",  // ← Multi-tenant key
-  "user_id": "user-456",
-  "title": "Product Roadmap",
-  ...
-}
-```
-
-**Blocks Table:**
-
-```json
-{
-  "block_id": "block_789",
-  "organization_id": "org-a",  // ← Multi-tenant key
-  "page_id": "page_123",
-  ...
-}
-```
-
-**Tags, Links, etc.:** All resources follow the same pattern.
 
 ---
 
 ## Authentication Flow
 
-### 1. Obtaining a JWT Token
+### 1. Login to AINative Core
 
-**Ocean API does NOT issue JWT tokens.** Tokens are obtained from the parent authentication service.
+**Endpoint**: `POST https://api.ainative.studio/v1/auth/login`
 
-**Typical Flow:**
-
-```
-┌─────────┐          ┌──────────────┐          ┌──────────────┐
-│ Client  │          │ Auth Service │          │  Ocean API   │
-└────┬────┘          └──────┬───────┘          └──────┬───────┘
-     │                      │                         │
-     │ 1. POST /login       │                         │
-     │─────────────────────>│                         │
-     │  {email, password}   │                         │
-     │                      │                         │
-     │ 2. JWT Token         │                         │
-     │<─────────────────────│                         │
-     │  {token: "eyJ..."}   │                         │
-     │                      │                         │
-     │ 3. GET /pages                                  │
-     │──────────────────────────────────────────────> │
-     │  Authorization: Bearer eyJ...                  │
-     │                      │                         │
-     │                      │ 4. Validate Token       │
-     │                      │ 5. Extract org_id       │
-     │                      │                         │
-     │ 6. Pages Response                              │
-     │<────────────────────────────────────────────── │
-     │  [{page_id, title, ...}]                       │
-     │                      │                         │
-```
-
-### 2. Request Authentication Process
-
-When Ocean receives a request:
-
-1. **Extract Token**: Get token from `Authorization: Bearer <token>` header
-2. **Verify Signature**: Validate token signature using `SECRET_KEY`
-3. **Check Expiration**: Verify token hasn't expired (`exp` claim)
-4. **Extract Claims**: Get `user_id` and `organization_id` from payload
-5. **Inject Dependencies**: Pass user info to endpoint handler
-6. **Filter Resources**: Apply `organization_id` filter to all queries
-
-### 3. Dependency Injection
-
-Ocean uses FastAPI's dependency injection to authenticate requests:
-
-**Code Example (Internal):**
-
-```python
-from app.api.deps import get_current_user
-
-@router.get("/pages")
-async def list_pages(
-    current_user: Dict[str, Any] = Depends(get_current_user),
-    service: OceanService = Depends(get_ocean_service)
-):
-    # current_user contains:
-    # {
-    #   "user_id": "test-user-123",
-    #   "organization_id": "test-org-456"
-    # }
-
-    pages = await service.get_pages(
-        org_id=current_user["organization_id"]
-    )
-    ...
-```
-
-**Result:** All resources are automatically scoped to the user's organization.
-
----
-
-## Token Structure
-
-### Token Configuration
-
-Ocean API uses the following JWT configuration:
-
-**Algorithm:** `HS256` (HMAC with SHA-256)
-**Secret Key:** Configured via `SECRET_KEY` environment variable
-**Expiration:** Configurable (default: 30 minutes)
-
-### Environment Variables
+**Request Format**: OAuth2 form-encoded (NOT JSON)
 
 ```bash
-# Required for JWT validation
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+curl -X POST "https://api.ainative.studio/v1/auth/login" \
+  -d "username=admin@ainative.studio" \
+  -d "password=Admin2025!Secure"
 ```
 
-**Security:** `SECRET_KEY` must be:
-- At least 32 characters long
-- Cryptographically random
-- Never committed to version control
-- Same across all services (Auth + Ocean)
-
-### Example Token Generation (Python)
-
-**Note:** This is for reference only. Tokens are issued by the auth service.
-
-```python
-import jwt
-from datetime import datetime, timedelta
-
-SECRET_KEY = "your-secret-key-here"
-ALGORITHM = "HS256"
-
-payload = {
-    "user_id": "test-user-123",
-    "organization_id": "test-org-456",
-    "exp": datetime.utcnow() + timedelta(minutes=30)
-}
-
-token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-print(token)
-# Output: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
----
-
-## Making Authenticated Requests
-
-### Authorization Header Format
-
-All requests must include the JWT token in the `Authorization` header:
-
-```http
-Authorization: Bearer <JWT_TOKEN>
-```
-
-**Format:**
-- **Scheme:** `Bearer` (capitalized)
-- **Token:** Full JWT token string (no quotes)
-
-### Example Requests
-
-**cURL:**
-
-```bash
-curl -X GET http://localhost:8000/api/v1/ocean/pages \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-
-**Python (requests):**
-
-```python
-import requests
-
-token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-headers = {
-    "Authorization": f"Bearer {token}"
-}
-
-response = requests.get(
-    "http://localhost:8000/api/v1/ocean/pages",
-    headers=headers
-)
-
-print(response.json())
-```
-
-**JavaScript (fetch):**
-
-```javascript
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
-
-fetch("http://localhost:8000/api/v1/ocean/pages", {
-  headers: {
-    "Authorization": `Bearer ${token}`
-  }
-})
-  .then(response => response.json())
-  .then(data => console.log(data));
-```
-
-**TypeScript (axios):**
-
-```typescript
-import axios from 'axios';
-
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
-
-const response = await axios.get(
-  "http://localhost:8000/api/v1/ocean/pages",
-  {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  }
-);
-
-console.log(response.data);
-```
-
----
-
-## Token Expiration and Refresh
-
-### Token Expiration
-
-JWT tokens expire after a configured duration (default: 30 minutes).
-
-**Expired Token Response:**
-
+**Response**:
 ```json
 {
-  "detail": "Token has expired"
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 1800
 }
 ```
 
-**HTTP Status:** `401 Unauthorized`
-
-### Token Refresh Flow
-
-When a token expires, the client must obtain a new token from the auth service.
-
-**Recommended Flow:**
-
-```
-┌─────────┐          ┌──────────────┐          ┌──────────────┐
-│ Client  │          │ Auth Service │          │  Ocean API   │
-└────┬────┘          └──────┬───────┘          └──────┬───────┘
-     │                      │                         │
-     │ 1. GET /pages                                  │
-     │──────────────────────────────────────────────> │
-     │  Authorization: Bearer <EXPIRED_TOKEN>         │
-     │                      │                         │
-     │ 2. 401 Unauthorized                            │
-     │<────────────────────────────────────────────── │
-     │  {"detail": "Token has expired"}               │
-     │                      │                         │
-     │ 3. POST /refresh     │                         │
-     │─────────────────────>│                         │
-     │  {refresh_token}     │                         │
-     │                      │                         │
-     │ 4. New Token         │                         │
-     │<─────────────────────│                         │
-     │  {token: "eyJ..."}   │                         │
-     │                      │                         │
-     │ 5. GET /pages (retry)                          │
-     │──────────────────────────────────────────────> │
-     │  Authorization: Bearer <NEW_TOKEN>             │
-     │                      │                         │
-     │ 6. Success Response                            │
-     │<────────────────────────────────────────────── │
-     │                      │                         │
-```
-
-### Automatic Token Refresh (Client-Side)
-
-**Python Example:**
-
-```python
-import requests
-from typing import Dict, Any
-
-class OceanClient:
-    def __init__(self, base_url: str, auth_url: str):
-        self.base_url = base_url
-        self.auth_url = auth_url
-        self.token = None
-        self.refresh_token = None
-
-    def login(self, email: str, password: str):
-        """Get initial token from auth service."""
-        response = requests.post(
-            f"{self.auth_url}/login",
-            json={"email": email, "password": password}
-        )
-        data = response.json()
-        self.token = data["access_token"]
-        self.refresh_token = data["refresh_token"]
-
-    def refresh(self):
-        """Refresh expired token."""
-        response = requests.post(
-            f"{self.auth_url}/refresh",
-            json={"refresh_token": self.refresh_token}
-        )
-        data = response.json()
-        self.token = data["access_token"]
-
-    def request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make authenticated request with automatic token refresh."""
-        headers = kwargs.get("headers", {})
-        headers["Authorization"] = f"Bearer {self.token}"
-        kwargs["headers"] = headers
-
-        response = requests.request(
-            method,
-            f"{self.base_url}{endpoint}",
-            **kwargs
-        )
-
-        # If token expired, refresh and retry
-        if response.status_code == 401:
-            self.refresh()
-            headers["Authorization"] = f"Bearer {self.token}"
-            response = requests.request(
-                method,
-                f"{self.base_url}{endpoint}",
-                **kwargs
-            )
-
-        return response.json()
-
-# Usage
-client = OceanClient(
-    base_url="http://localhost:8000/api/v1/ocean",
-    auth_url="http://localhost:8000/api/v1/auth"
-)
-
-client.login("user@example.com", "password123")
-
-# Automatic token refresh on expiration
-pages = client.request("GET", "/pages")
+**Token Contents** (JWT payload):
+```json
+{
+  "sub": "a9b717be-f449-43c6-abb4-18a1a6a0c70e",
+  "email": "admin@ainative.studio",
+  "role": "ADMIN",
+  "exp": 1766803059
+}
 ```
 
 ---
 
-## Security Best Practices
+### 2. Use Token with Ocean Backend
 
-### 1. Token Storage
-
-**Client-Side Storage:**
-
-| Storage Method | Security Level | Use Case |
-|----------------|----------------|----------|
-| **Memory (variable)** | High | Single-page apps (SPA) - lost on refresh |
-| **SessionStorage** | Medium | Per-tab storage, cleared on tab close |
-| **LocalStorage** | Low | Persistent storage, vulnerable to XSS |
-| **HttpOnly Cookie** | Highest | Server-set cookie, not accessible via JS |
-
-**Recommendations:**
-
-- **Web Apps:** Use memory + sessionStorage for access token, HttpOnly cookie for refresh token
-- **Mobile Apps:** Use secure storage (Keychain on iOS, Keystore on Android)
-- **Server-to-Server:** Use environment variables, never hardcode tokens
-
-**Never:**
-- Store tokens in URL parameters
-- Log tokens to console or files
-- Commit tokens to version control
-
-### 2. HTTPS Required
-
-**Always use HTTPS in production** to prevent token interception:
-
-```
-✅ https://ocean.ainative.studio/api/v1/ocean/pages
-❌ http://ocean.ainative.studio/api/v1/ocean/pages
-```
-
-**Why:**
-- HTTP transmits tokens in plaintext
-- Man-in-the-middle attacks can steal tokens
-- HTTPS encrypts all communication
-
-### 3. Token Expiration
-
-**Use short-lived access tokens:**
-
-- **Access Token:** 15-30 minutes (short)
-- **Refresh Token:** 7-30 days (long)
-
-**Benefits:**
-- Limits damage if token is compromised
-- Forces regular re-authentication
-- Refresh tokens allow extending sessions without re-login
-
-### 4. CORS Configuration
-
-Ocean API enforces CORS (Cross-Origin Resource Sharing) to prevent unauthorized domains from accessing the API.
-
-**Allowed Origins (Development):**
-
-```python
-BACKEND_CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8000"
-]
-```
-
-**Production:**
-
-```python
-BACKEND_CORS_ORIGINS = [
-    "https://ocean.ainative.studio",
-    "https://app.ainative.studio"
-]
-```
-
-**Security:** Only whitelist trusted domains.
-
-### 5. Rate Limiting
-
-**TODO (Issue #18):** Rate limiting will be implemented to prevent:
-- Brute force attacks on authentication
-- API abuse and DoS attacks
-- Excessive token refresh attempts
-
-**Planned Limits:**
-
-- 1000 requests/hour per organization
-- 10 failed auth attempts per IP per hour
-
----
-
-## Troubleshooting
-
-### Common Authentication Errors
-
-#### 1. `401 Unauthorized: Not authenticated`
-
-**Cause:** Missing or malformed Authorization header
-
-**Solutions:**
-
-- Verify header format: `Authorization: Bearer <token>`
-- Check for typos: `Bearer` (not `bearer` or `Token`)
-- Ensure token is included in every request
-
-**Example Fix:**
+**All Ocean endpoints require Authorization header**:
 
 ```bash
-# ❌ Wrong
-curl -X GET http://localhost:8000/api/v1/ocean/pages
+curl -H "Authorization: Bearer <access_token>" \
+  "https://ocean-backend-production-056c.up.railway.app/api/v1/ocean/pages"
+```
 
-# ✅ Correct
-curl -X GET http://localhost:8000/api/v1/ocean/pages \
-  -H "Authorization: Bearer eyJhbGci..."
+**Example Response**:
+```json
+{
+  "pages": [],
+  "total": 0,
+  "limit": 50,
+  "offset": 0
+}
 ```
 
 ---
 
-#### 2. `401 Unauthorized: Token has expired`
+## Available Authentication Endpoints
 
-**Cause:** JWT token has passed its expiration time (`exp` claim)
+### AINative Core Auth API
 
-**Solutions:**
-
-- Request a new token from auth service
-- Implement automatic token refresh (see examples above)
-- Increase token expiration time (if appropriate)
-
-**Debug:**
-
-```python
-import jwt
-
-token = "your_token_here"
-decoded = jwt.decode(token, options={"verify_signature": False})
-print(f"Expires at: {decoded['exp']}")  # Unix timestamp
-```
+| Endpoint | Method | Purpose | Auth Required |
+|----------|--------|---------|---------------|
+| `/v1/auth/login` | POST | User login | No |
+| `/v1/auth/register` | POST | User registration | No |
+| `/v1/auth/refresh` | POST | Refresh access token | Yes (refresh token) |
+| `/v1/auth/me` | GET | Get current user | Yes (access token) |
+| `/v1/auth/verify-email` | POST | Email verification | No |
+| `/v1/auth/forgot-password` | POST | Password reset request | No |
+| `/v1/auth/reset-password` | POST | Password reset | No |
+| `/v1/auth/logout` | POST | Logout (blacklist token) | Yes |
 
 ---
 
-#### 3. `401 Unauthorized: Invalid token signature`
+## Credentials (from .env files)
 
-**Cause:** Token was signed with a different `SECRET_KEY`
-
-**Solutions:**
-
-- Verify `SECRET_KEY` matches between auth service and Ocean API
-- Ensure token was issued by trusted auth service
-- Check for token tampering (manual editing)
-
-**Debug:**
-
+### Admin Account
 ```bash
-# Compare SECRET_KEY across services
-# Auth service .env
-SECRET_KEY=abc123...
+Username: admin@ainative.studio
+Password: Admin2025!Secure
+```
 
-# Ocean API .env
-SECRET_KEY=abc123...  # ← Must match
+### Test Token (expires 2025-12-27)
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhOWI3MTdiZS1mNDQ5LTQzYzYtYWJiNC0xOGExYTZhMGM3MGUiLCJlbWFpbCI6ImFkbWluQGFpbmF0aXZlLnN0dWRpbyIsInJvbGUiOiJBRE1JTiIsImV4cCI6MTc2NjgwMzA1OX0._RsR_NAaJsinS9f5HC05OR5iq5YQ-HeHiWMB_8lCYvY
 ```
 
 ---
 
-#### 4. `404 Not Found: Page not found or does not belong to organization`
+## Ocean API Endpoints (Authenticated)
 
-**Cause:** Resource belongs to a different organization
+All endpoints require `Authorization: Bearer <token>` header:
 
-**Explanation:**
-- Token contains `organization_id = "org-a"`
-- Requested resource belongs to `organization_id = "org-b"`
-- Multi-tenant isolation blocks access
+### Pages
+- `GET /api/v1/ocean/pages` - List all pages
+- `POST /api/v1/ocean/pages` - Create new page
+- `GET /api/v1/ocean/pages/{page_id}` - Get page by ID
+- `PUT /api/v1/ocean/pages/{page_id}` - Update page
+- `DELETE /api/v1/ocean/pages/{page_id}` - Delete page
+- `POST /api/v1/ocean/pages/{page_id}/move` - Move page
 
-**Solutions:**
+### Blocks
+- `GET /api/v1/ocean/blocks` - List blocks
+- `POST /api/v1/ocean/blocks` - Create block
+- `GET /api/v1/ocean/blocks/{block_id}` - Get block
+- `PUT /api/v1/ocean/blocks/{block_id}` - Update block
+- `DELETE /api/v1/ocean/blocks/{block_id}` - Delete block
+- `POST /api/v1/ocean/blocks/{block_id}/move` - Move block
+- `POST /api/v1/ocean/blocks/{block_id}/convert` - Convert block type
 
-- Verify you're logged in with the correct organization
-- Request a token for the correct organization
-- Check resource ownership in database
+### Search
+- `POST /api/v1/ocean/search` - Semantic search across pages/blocks
 
----
+### Links
+- `POST /api/v1/ocean/links` - Create block link
+- `GET /api/v1/ocean/links` - Get block links
+- `DELETE /api/v1/ocean/links/{link_id}` - Delete link
 
-#### 5. `422 Validation Error: Field required`
-
-**Cause:** JWT token missing required claims (`user_id` or `organization_id`)
-
-**Solutions:**
-
-- Ensure auth service includes all required claims in token
-- Verify token payload structure
-
-**Debug:**
-
-```python
-import jwt
-
-token = "your_token_here"
-decoded = jwt.decode(token, options={"verify_signature": False})
-print(decoded)
-
-# Expected output:
-# {
-#   "user_id": "test-user-123",
-#   "organization_id": "test-org-456",
-#   "exp": 1735123456
-# }
-```
+### Tags
+- `POST /api/v1/ocean/tags` - Create tag
+- `GET /api/v1/ocean/tags` - List tags
+- `PUT /api/v1/ocean/tags/{tag_id}` - Update tag
+- `DELETE /api/v1/ocean/tags/{tag_id}` - Delete tag
 
 ---
 
-### Debug Mode
+## Testing Authentication
 
-**Enable debug logging** to troubleshoot authentication issues:
-
+### 1. Login and Get Token
 ```bash
-# .env
-DEBUG=True
+TOKEN=$(curl -s -X POST "https://api.ainative.studio/v1/auth/login" \
+  -d "username=admin@ainative.studio" \
+  -d "password=Admin2025!Secure" \
+  | jq -r .access_token)
 ```
 
-**Debug Output:**
-
+### 2. Create a Page
+```bash
+curl -X POST "https://ocean-backend-production-056c.up.railway.app/api/v1/ocean/pages" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "My First Page",
+    "icon": "📄",
+    "cover_image": null,
+    "parent_page_id": null
+  }'
 ```
-INFO:     JWT token received: eyJhbGci...
-DEBUG:    Decoded payload: {'user_id': 'test-user-123', 'organization_id': 'test-org-456', ...}
-INFO:     User authenticated: test-user-123
-DEBUG:    Organization filter applied: test-org-456
-```
 
-**Warning:** Never enable debug mode in production (exposes sensitive data).
+### 3. List Pages
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://ocean-backend-production-056c.up.railway.app/api/v1/ocean/pages"
+```
 
 ---
 
-### Testing Authentication
+## Required Integration Work
 
-**Test Token Generation:**
+### TODO: Replace Mock Auth in Ocean Backend
 
+**File**: `/Users/aideveloper/ocean-backend/app/api/deps.py`
+
+**Current Implementation** (lines 14-44):
+- Returns mock test user
+- Accepts any Authorization header
+- No JWT validation
+
+**Required Changes**:
+
+1. **Validate JWT token** with AINative core auth service
+2. **Extract user claims** from validated token (user_id, organization_id, email, role)
+3. **Check token blacklist** (for logout functionality)
+4. **Handle token expiration** and return 401 errors
+
+**Implementation Options**:
+
+#### Option A: Call AINative Auth Service
 ```python
-# tests/test_auth.py
-import jwt
-from datetime import datetime, timedelta
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-SECRET_KEY = "test-secret-key"
-ALGORITHM = "HS256"
+    token = authorization.replace("Bearer ", "")
 
-def create_test_token(user_id: str, org_id: str) -> str:
-    """Create test JWT token for integration tests."""
-    payload = {
-        "user_id": user_id,
-        "organization_id": org_id,
-        "exp": datetime.utcnow() + timedelta(hours=1)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    # Call AINative core auth /v1/auth/validate endpoint
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{AINATIVE_API_URL}/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"}
+        )
 
-# Usage in tests
-token = create_test_token("test-user-123", "test-org-456")
+        if response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid token")
 
-response = client.get(
-    "/api/v1/ocean/pages",
-    headers={"Authorization": f"Bearer {token}"}
-)
+        user = response.json()
+        return {
+            "user_id": user["id"],
+            "organization_id": user["organization_id"],
+            "email": user["email"],
+            "role": user["role"]
+        }
+```
 
-assert response.status_code == 200
+#### Option B: Local JWT Validation (Faster)
+```python
+from jose import jwt, JWTError
+from app.config import settings
+
+async def get_current_user(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    token = authorization.replace("Bearer ", "")
+
+    try:
+        # Decode JWT using shared secret
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        role = payload.get("role")
+
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        # TODO: Get organization_id from user database
+        return {
+            "user_id": user_id,
+            "organization_id": "TODO",  # Query from database
+            "email": email,
+            "role": role
+        }
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 ```
 
 ---
 
-## Additional Resources
+## Security Considerations
 
-- **API Reference:** [API_REFERENCE.md](./API_REFERENCE.md)
-- **Error Codes:** [ERROR_CODES.md](./ERROR_CODES.md)
-- **Code Examples:** [examples/](./examples/)
-- **JWT Specification:** https://jwt.io/introduction
-- **FastAPI Security:** https://fastapi.tiangolo.com/tutorial/security/
-
----
-
-## Support
-
-- **GitHub Issues:** [ocean-backend/issues](https://github.com/ainative/ocean-backend/issues)
-- **Email:** support@ainative.studio
-- **Security Issues:** security@ainative.studio (for vulnerabilities)
+1. **Token Expiration**: Access tokens expire in 1800 seconds (30 minutes)
+2. **Refresh Tokens**: Use `/v1/auth/refresh` to get new access tokens
+3. **Token Blacklisting**: Logout invalidates tokens via blacklist
+4. **Multi-tenant Isolation**: All Ocean operations filter by organization_id
+5. **CORS**: Ocean backend allows requests from configured origins only
 
 ---
 
-**Last Updated:** 2025-12-24
-**API Version:** 0.1.0
+## Environment Variables Required
+
+### Ocean Backend (.env)
+```bash
+# Already configured:
+ZERODB_API_URL=https://api.ainative.studio
+ZERODB_PROJECT_ID=b832ac6e-bd16-4efa-9d55-209ebf872db9
+ZERODB_API_KEY=9khD3l6lpI9O7AwVOkxdl5ZOQP0upsu0vIsiQbLCUGk
+SECRET_KEY=kLPiP0bzgKJ0CnNYVt1wq3qxbs2QgDeF2XwyUnxBEOM
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Need to add for auth integration:
+AINATIVE_API_URL=https://api.ainative.studio
+```
+
+### Railway Variables
+Same as above - already configured in Railway dashboard.
+
+---
+
+## Next Steps
+
+1. **Create GitHub Issue** for Ocean auth integration
+2. **Implement JWT validation** in `app/api/deps.py`
+3. **Add organization_id lookup** from user database
+4. **Test authentication flow** end-to-end
+5. **Update frontend** to use proper auth flow:
+   - Login via AINative auth
+   - Store access token
+   - Send token with Ocean API requests
+   - Handle token refresh
+
+---
+
+## Status Summary
+
+✅ **Working**:
+- AINative core auth API (production)
+- Ocean backend API (production)
+- JWT token generation
+- Token-based API access (via mock auth)
+
+⚠️ **Needs Implementation**:
+- Ocean backend JWT validation
+- Organization ID extraction from token
+- Token blacklist checking
+- Proper 401/403 error handling
+
+🎯 **Ready For**:
+- Frontend integration
+- User testing
+- Production deployment (after auth integration)
+
+---
+
+**Generated**: 2025-12-27
+**Status**: Authentication design documented, integration pending

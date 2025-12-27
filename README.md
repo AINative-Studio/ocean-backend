@@ -1,31 +1,117 @@
-# Ocean Backend
+# 🌊 Ocean Backend
 
-**Block-Based Knowledge Workspace - FastAPI Backend with ZeroDB Integration**
+**Notion-like Workspace API with AI-Powered Semantic Search**
 
-Ocean is a modern block-based knowledge management workspace similar to Notion, built with FastAPI. **All data services powered by AINative ZeroDB** - our serverless NoSQL database with built-in vector search and embeddings API.
+Ocean is a collaborative workspace platform built with FastAPI and ZeroDB serverless infrastructure. Think Notion, but with built-in AI semantic search and vector embeddings.
+
+## 🎯 Production Status
+
+| Component | Status | URL |
+|-----------|--------|-----|
+| **Backend API** | ✅ **LIVE** | https://ocean-backend-production-056c.up.railway.app |
+| **API Documentation** | ✅ Available | https://ocean-backend-production-056c.up.railway.app/docs |
+| **Health Check** | ✅ Passing | https://ocean-backend-production-056c.up.railway.app/health |
+| **ZeroDB Integration** | ✅ Configured | Serverless NoSQL + Vector Search |
+| **Authentication** | ⚠️ Pending | AINative Core Auth (in progress) |
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start for Developers
+
+### Prerequisites
+- Python 3.11+
+- Git
+- (Optional) Railway CLI for deployment
+
+### Local Development Setup
 
 ```bash
-# Clone repository
+# 1. Clone repository
 git clone https://github.com/AINative-Studio/ocean-backend.git
 cd ocean-backend
 
-# Follow Day 1 setup guide
-cat DAY1_CHECKLIST.md
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
+# 4. Set up environment variables
 cp .env.example .env
-# Edit .env with your ZeroDB credentials
+# Contact team lead for ZeroDB credentials
 
-# Run development server
-uvicorn app.main:app --reload
+# 5. Run development server
+uvicorn app.main:app --reload --port 8000
 ```
+
+**Local API:** http://localhost:8000
+**Docs:** http://localhost:8000/docs
+
+### First Steps After Setup
+
+1. **Test the API** - Open http://localhost:8000/docs in browser
+2. **Authenticate** - Get JWT token from AINative auth (see Authentication section)
+3. **Create your first page** - Use Swagger UI to POST `/api/v1/ocean/pages`
+4. **Review project structure** - See [Project Structure](#-project-structure) below
+5. **Pick an issue** - https://github.com/AINative-Studio/ocean-backend/issues
+
+---
+
+## 🔐 Authentication Flow
+
+Ocean uses **AINative Core Authentication Service** for user management.
+
+### For API Testing:
+
+```bash
+# 1. Get access token from AINative Core Auth
+curl -X POST "https://api.ainative.studio/v1/auth/login" \
+  -d "username=YOUR_EMAIL" \
+  -d "password=YOUR_PASSWORD"
+
+# Returns: {"access_token": "eyJhbGci...", "expires_in": 1800}
+
+# 2. Use token with Ocean endpoints
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://ocean-backend-production-056c.up.railway.app/api/v1/ocean/pages"
+```
+
+### For Frontend Integration:
+
+```javascript
+// Login to get JWT token
+const auth = await fetch('https://api.ainative.studio/v1/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({ username: email, password: password })
+});
+const { access_token } = await auth.json();
+
+// Use token with Ocean API
+const pages = await fetch('https://ocean-backend-production-056c.up.railway.app/api/v1/ocean/pages', {
+  headers: { 'Authorization': `Bearer ${access_token}` }
+});
+```
+
+**Note:** Authentication currently uses mock validation. JWT integration is in progress (see [Contributing](#-contributing)).
+
+---
+
+## 📋 New Team Member Onboarding
+
+**👉 For comprehensive onboarding guide, see:** [TEAM_ONBOARDING.md](TEAM_ONBOARDING.md)
+
+The team onboarding guide includes:
+- Complete architecture overview
+- Frontend developer quick start
+- Backend developer deep dive
+- All API endpoints with examples
+- Authentication details
+- Development workflow
+- Roadmap and next steps
+
+---
 
 ---
 
