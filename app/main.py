@@ -77,11 +77,16 @@ app.include_router(
 async def startup_event():
     """Startup event - check configuration."""
     import logging
+    import os
     logger = logging.getLogger("uvicorn")
 
     logger.info("=" * 60)
     logger.info("Ocean Backend Starting...")
     logger.info("=" * 60)
+
+    # Log PORT environment variable for Railway debugging
+    port = os.environ.get("PORT", "NOT_SET")
+    logger.info(f"🔍 PORT environment variable: {port}")
 
     if not settings.validate_zerodb_config():
         logger.warning("⚠️  ZeroDB credentials NOT configured!")
